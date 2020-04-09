@@ -1,0 +1,431 @@
+openapi: 3.0.0
+info:
+  title: Wavve Headend URLs
+  description: "Wavve 헤드엔드 URLs \n\n본 규격의 URL과 API는 플랫폼 <-> 헤드엔드 <-> 클라우드의 범위를 다루고\
+    \ 있습니다. \n\n본 규격은 상시 변동이 있을 수 있는 내용을 포함하고 있습니다. 변경 내역 관련 문의 media@wavve.com 으로\
+    \ 하여 주시기 바랍니다.\n"
+  contact:
+    email: media@wavve.com
+  version: 1.0.0
+servers:
+- url: https://virtserver.swaggerhub.com/djlee-wavve/headend/1.0.0
+  description: SwaggerHub API Auto Mocking
+- url: https://virtserver.swaggerhub.com/djlee-wavve/test/1.0.0
+  description: SwaggerHub API Auto Mocking
+tags:
+- name: file live
+  description: File live headend URL
+- name: live
+  description: Live headend URL
+- name: ovod
+  description: ovod headend URL
+- name: thumbnail
+  description: thumbnail headend URL
+- name: vod
+  description: vod headend URL
+- name: toCDN
+  description: CDN으로 open한 URL
+- name: toInternal
+  description: Internal만 open한 URL
+paths:
+  /{proto}/{channel}/{contentId}/live{bitrate}.m3u8:
+    get:
+      tags:
+      - file live
+      - toCDN
+      description: 파일 라이브 마스터 플레이리스트 요청 URL
+      parameters:
+      - name: proto
+        in: path
+        description: 스트리밍 프로토콜
+        required: true
+        style: simple
+        explode: false
+        schema:
+          type: string
+          default: hls
+          enum:
+          - hls
+      - name: channel
+        in: path
+        description: 채널
+        required: true
+        style: simple
+        explode: false
+        schema:
+          type: string
+      - name: contentId
+        in: path
+        description: 컨텐츠 ID
+        required: true
+        style: simple
+        explode: false
+        schema:
+          type: string
+      - name: bitrate
+        in: path
+        description: 화질 비트레이트
+        required: true
+        style: simple
+        explode: false
+        schema:
+          type: number
+          enum:
+          - 100
+          - 500
+          - 1000
+          - 2000
+          - 5000
+      - name: seek
+        in: query
+        description: seeking 초
+        required: false
+        style: form
+        explode: true
+        schema:
+          maximum: 21600
+          minimum: 0
+          type: integer
+      - name: x-cdn-token
+        in: header
+        description: CDN 인증 토큰, 헤더 또는 쿼리 중 하나에 추가하여 사용
+        required: false
+        style: simple
+        explode: false
+        schema:
+          type: string
+      - name: x-cdn-token
+        in: query
+        description: CDN 인증 토큰, 헤더 또는 쿼리 중 하나에 추가하여 사용
+        required: false
+        style: form
+        explode: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: TODO
+          content:
+            application/vnd.apple.mepgurl:
+              schema:
+                $ref: '#/components/schemas/fliveMasterPlaylistResponse'
+        "304":
+          description: TODO
+        "403":
+          description: TODO
+        "404":
+          description: TODO
+        "500":
+          description: TODO
+        "501":
+          description: TODO
+        "502":
+          description: TODO
+        "504":
+          description: TODO
+  /{proto}/{channel}/{contentId}/{bitrate}/live.m3u8:
+    get:
+      tags:
+      - file live
+      - toCDN
+      description: 미디어 플레이리스트 요청 URL
+      parameters:
+      - name: proto
+        in: path
+        description: 스트리밍 프로토콜
+        required: true
+        style: simple
+        explode: false
+        schema:
+          type: string
+          default: hls
+          enum:
+          - hls
+      - name: channel
+        in: path
+        description: 채널
+        required: true
+        style: simple
+        explode: false
+        schema:
+          type: string
+      - name: contentId
+        in: path
+        description: 컨텐츠 ID
+        required: true
+        style: simple
+        explode: false
+        schema:
+          type: string
+      - name: bitrate
+        in: path
+        description: 화질 비트레이트
+        required: true
+        style: simple
+        explode: false
+        schema:
+          type: number
+          enum:
+          - 100
+          - 500
+          - 1000
+          - 2000
+          - 5000
+      - name: seek
+        in: query
+        description: seeking 초
+        required: false
+        style: form
+        explode: true
+        schema:
+          maximum: 21600
+          minimum: 0
+          type: integer
+      - name: x-cdn-token
+        in: header
+        description: CDN 인증 토큰, 헤더 또는 쿼리 중 하나에 추가하여 사용
+        required: false
+        style: simple
+        explode: false
+        schema:
+          type: string
+      - name: x-cdn-token
+        in: query
+        description: CDN 인증 토큰, 헤더 또는 쿼리 중 하나에 추가하여 사용
+        required: false
+        style: form
+        explode: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: TODO
+          content:
+            application/vnd.apple.mepgurl:
+              schema:
+                $ref: '#/components/schemas/fliveMediaPlaylistResponse'
+        "304":
+          description: TODO
+        "403":
+          description: TODO
+        "404":
+          description: TODO
+        "500":
+          description: TODO
+        "501":
+          description: TODO
+        "502":
+          description: TODO
+        "504":
+          description: TODO
+  /{proto}/{channel}/{contentId}/{bitrate}/{warterMark}/media_{seq}.ts:
+    get:
+      tags:
+      - file live
+      - toCDN
+      description: File live 미디어 요청 URL
+      parameters:
+      - name: proto
+        in: path
+        description: 스트리밍 프로토콜
+        required: true
+        style: simple
+        explode: false
+        schema:
+          type: string
+          default: hls
+          enum:
+          - hls
+      - name: channel
+        in: path
+        description: 채널
+        required: true
+        style: simple
+        explode: false
+        schema:
+          type: string
+      - name: contentId
+        in: path
+        description: 컨텐츠 ID
+        required: true
+        style: simple
+        explode: false
+        schema:
+          type: string
+      - name: bitrate
+        in: path
+        description: 화질 비트레이트
+        required: true
+        style: simple
+        explode: false
+        schema:
+          type: number
+          enum:
+          - 100
+          - 500
+          - 1000
+          - 2000
+          - 5000
+      - name: warterMark
+        in: path
+        description: 워터마크 컨텐츠의 워터마크 패턴 번호
+        required: true
+        style: simple
+        explode: false
+        schema:
+          type: number
+          enum:
+          - 0
+          - 1
+      - name: seq
+        in: path
+        description: 미디어 파일의 시퀀스 번호
+        required: true
+        style: simple
+        explode: false
+        schema:
+          type: integer
+      - name: seek
+        in: query
+        description: seeking 초
+        required: false
+        style: form
+        explode: true
+        schema:
+          maximum: 21600
+          minimum: 0
+          type: integer
+      - name: x-cdn-token
+        in: header
+        description: CDN 인증 토큰, 헤더 또는 쿼리 중 하나에 추가하여 사용
+        required: false
+        style: simple
+        explode: false
+        schema:
+          type: string
+      - name: x-cdn-token
+        in: query
+        description: CDN 인증 토큰, 헤더 또는 쿼리 중 하나에 추가하여 사용
+        required: false
+        style: form
+        explode: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: TODO
+          content:
+            video/MP2T:
+              example: |
+                TODO
+        "304":
+          description: TODO
+        "403":
+          description: TODO
+        "404":
+          description: TODO
+        "500":
+          description: TODO
+        "501":
+          description: TODO
+        "502":
+          description: TODO
+        "504":
+          description: TODO
+  /etc/{channel}/epg.xml:
+    get:
+      tags:
+      - file live
+      - toCDN
+      description: File live의 채널별 EPG 조회 URL
+      parameters:
+      - name: channel
+        in: path
+        description: 채널
+        required: true
+        style: simple
+        explode: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: TODO
+          content:
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/epgXmlResponse'
+        "304":
+          description: TODO
+        "403":
+          description: TODO
+        "404":
+          description: TODO
+        "500":
+          description: TODO
+        "501":
+          description: TODO
+        "502":
+          description: TODO
+        "504":
+          description: TODO
+  /etc/{epgFile}:
+    get:
+      tags:
+      - file live
+      - toInternal
+      description: File live의 Blob 스토리지의 EPG 조회 URL
+      parameters:
+      - name: epgFile
+        in: path
+        description: epg 파일 이름
+        required: true
+        style: simple
+        explode: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: TODO
+          content:
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/epgXmlResponse'
+        "304":
+          description: TODO
+        "403":
+          description: TODO
+        "404":
+          description: TODO
+        "500":
+          description: TODO
+        "501":
+          description: TODO
+        "502":
+          description: TODO
+        "504":
+          description: TODO
+components:
+  schemas:
+    fliveMasterPlaylistResponse:
+      type: string
+      example: |
+        #EXTM3U
+        #EXT-X-VERSION:3
+        #EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=250000,CODECS=\"avc1.77.22,mp4a.40.5\",RESOLUTION=480x270"
+        250/live.m3u8
+        #EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=500000,CODECS=\"avc1.77.30,mp4a.40.5\",RESOLUTION=640x360"
+        500/live.m3u8
+        #EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=1000000,CODECS=\"avc1.77.31,mp4a.40.5\",RESOLUTION=854x480"
+        1000/live.m3u8
+        #EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=2000000,CODECS=\"avc1.77.31,mp4a.40.5\",RESOLUTION=1280x720"
+        2000/live.m3u8
+        #EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=5000000,CODECS=\"avc1.77.41,mp4a.40.5\",RESOLUTION=1920x1080"
+        5000/live.m3u8
+    fliveMediaPlaylistResponse:
+      type: string
+      example: |
+        TODO
+    epgXmlResponse:
+      type: string
+      example: |
+        TODO
