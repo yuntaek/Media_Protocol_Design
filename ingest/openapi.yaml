@@ -1,0 +1,1029 @@
+openapi: 3.0.0
+info:
+  title: wavve ingest system v5
+  description: |
+    Wavve 미디어 입수 시스템 API 문서(draft)
+
+    본 규격은 상시 변동이 있을 수 있는 내용을 포함하고 있는 있습니다. 변경 내역 관련 문의 media@wavve.com 으로 하여 주시기 바랍니다.
+    contact:
+    email: media@wavve.com
+  version: "5"
+servers:
+- url: https://virtserver.swaggerhub.com/djlee-wavve/ingest/5
+  description: SwaggerHub API Auto Mocking
+- url: http://api.example.com/v5
+  description: production server
+- url: http://staging-api.example.com/v5
+  description: staging server for testing
+tags:
+- name: worker
+  description: worker 관련 API
+- name: job
+  description: job 관련 API
+- name: JAPI
+  description: JAPI 관련 API
+paths:
+  /job/request:
+    get:
+      tags:
+      - job
+      description: return job from ingest system DB
+      parameters:
+      - name: jobType
+        in: query
+        required: false
+        style: form
+        explode: true
+        schema:
+          $ref: '#/components/parameters/jobTypeParam'
+      - name: jobState
+        in: query
+        required: false
+        style: form
+        explode: true
+        schema:
+          $ref: '#/components/parameters/jobStateParam'
+      - name: jobCnt
+        in: query
+        required: false
+        style: form
+        explode: true
+        schema:
+          $ref: '#/components/parameters/jobCntParam'
+      responses:
+        "200":
+          description: A JSON array of jobs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/inline_response_200'
+  /worker/request:
+    get:
+      tags:
+      - worker
+      description: return worker information from redis
+      parameters:
+      - name: workerType
+        in: query
+        required: false
+        style: form
+        explode: true
+        schema:
+          $ref: '#/components/parameters/workerTypeParam'
+      - name: workerId
+        in: query
+        required: false
+        style: form
+        explode: true
+        schema:
+          type: string
+      - name: workerIp
+        in: query
+        required: false
+        style: form
+        explode: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: |
+            1. redis 접근 확인
+            - 실패시 응답: \
+              X-Ingest-Status: <workerType> request ERROR\
+              X-Ingest-Message: redis connection fail\
+              Content-Type: application/json; charset=utf-8\
+              Status Code: 200\
+              Body: \
+              { "message": "fail",\
+                "result": { "status": "fail" },\
+                "returnCode": 500,\
+                "version": "5.0.1" }
+            2. redis의 "check" KEY 값 증가
+            - 실패시 응답\
+              X-Ingest-Status: <workerType>request ERROR\
+              X-Ingest-Message: redis insert fail\
+              Content-Type: application/json; charset=utf-8\
+              Status Code: 200\
+              Body: \
+              { "message": "fail",\
+                "result": { "status": "fail" },\
+                "returnCode": 500,\
+              "version": "5.0.1" }
+            3. redis에서 "worker:assignedSpot:<workerId>" 존재 여부 확인
+            - 이미 존재하는 경우 응답\
+              X-Ingest-Status: <workerType> request ERROR\
+              X-Ingest-Message: already assigned workerId\
+              Content-Type: application/json; charset=utf-8\
+              Status Code: 200\
+              Body: \
+              { "message": "fail",\
+                "result": { "count": 0, "list": [] },\
+                "returnCode": 200,\
+                "version": "5.0.1" }
+            4. redis에서 "worker:unassignedJobs:<workerType>" 조회
+            - 미할당 job이 없는 경우 응답\
+              X-Ingest-Status: <workerType> request ERROR\
+              X-Ingest-Message: job not found\
+              Content-Type: application/json; charset=utf-8\
+              Status Code: 200\
+              Body: \
+              { "message": "success",\
+                "result": { "count": 0, "list": [] },\
+                "returnCode": 200,\
+                "version": "5.0.1" }
+            5. redis에서 "worker:finishedJobs:<workerType>" 조회
+              - jobId를 이용하여 job 완료 여부 조회 후 완료된 경우 응답\
+              X-Ingest-Status: <workerType> request ERROR\
+              X-Ingest-Message: already finished job\
+              Content-Type: application/json; charset=utf-8\
+              Status Code: 200\
+              Body: \
+              { "message": "success",\
+                "result": { "count": 0, "list": [] },\
+                "returnCode": 500,\
+                "version": "5.0.1" }
+            6. redis에서 다음 operations 수행
+              - SADD "worker:assignedJob:" "<workerId>"
+              - EXPIRE "worker:assignedJob:<workerId>" 86400
+              - SETEX "worker:assignedSpot:<workerId>" 86400 "<4번의 조회 결과>"
+              - SETEX "worker:divCount:<4번 조회 결과의 jobId>" 86400 "<4번 조회 결과의 divCount>"
+              - SADD "worker:workerIds:<workerType>" "<workerId>"
+            7. redis에서 heartbeat 업데이트 후 응답
+              - SETEX "worker:heartbeat:<workerId>" 30 "<workerIp>"
+              - SETEX "worker:jobStatus:<jobId>" 86400 "ongoing"
+              X-Ingest-Status: <workerType> request OK\
+              X-Ingest-Message: "<4번 조회 결과>"\
+              Content-Type: application/json; charset=utf-8\
+              Status Code: 200\
+              Body: \
+              { "message": "success",\
+                "result": { "count": 1, "list": [ "<4번 조회 결과>", ... ] },\
+                "returnCode": 200,\
+                "version": "5.0.1" }
+              schema:
+                $ref: '#/components/responses/WorkerCommonResponseModel'
+  /worker/report:
+    get:
+      tags:
+      - worker
+      summary: workManager 처리 결과 조회 API
+      parameters:
+      - name: jobId
+        in: query
+        required: false
+        style: form
+        explode: true
+        schema:
+          type: string
+      - name: workerType
+        in: query
+        required: true
+        style: form
+        explode: true
+        schema:
+          $ref: '#/components/parameters/workerTypeParam'
+      - name: jobState
+        in: query
+        required: true
+        style: form
+        explode: true
+        schema:
+          $ref: '#/components/parameters/jobStateParam'
+      - name: errCode
+        in: query
+        required: false
+        style: form
+        explode: true
+        schema:
+          type: string
+      - name: workerId
+        in: query
+        required: true
+        style: form
+        explode: true
+        schema:
+          type: string
+      - name: workerIp
+        in: query
+        required: false
+        style: form
+        explode: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: "1. 주요 http query parameter 명시 검사\n  - \"workerType\", \"workerId\"\
+            , \"jobState\" 인자값들이 없는 경우 응답 메시지\\\n  X-Ingest-Status: <workerType> report\
+            \ ERROR\\\n  X-Ingest-Message: missing required parameters\\\n  Content-Type:\
+            \ application/json; charset=utf-8\\\n  Status Code: 200\\\n  Body: \\\n\
+            \  { \"message\": \"fail\",\\\n    \"result\": { \"status\": \"fail\"\
+            \ },\\\n    \"returnCode\": 500,\\\n    \"version\": \"5.0.1\" }\n2. redis\
+            \ 접근 확인\n  - 실패시 응답 메시지\\\n  X-Ingest-Status: <workerType> report ERROR\\\
+            \n  X-Ingest-Message: redis connection fail\\\n  Content-Type: application/json;\
+            \ charset=utf-8\\\n  Status Code: 200\\\n  Body: \\\n  { \"message\":\
+            \ \"fail\",\\\n    \"result\": { \"status\": \"fail\" },\\\n    \"returnCode\"\
+            : 500,\\\n    \"version\": \"5.0.1\" }\n3. redis에서 \"check\" KEY 값 증가\n\
+            \ - 실패시 응답 메시지\\\n  X-Ingest-Status: <workerType>report ERROR\\\n  X-Ingest-Message:\
+            \ redis insert fail\\\n  Content-Type: application/json; charset=utf-8\\\
+            \n  Statu11Code: 200\\\n  Body: \\\n  { \"message\": \"fail\",\\\n   \
+            \ \"result\": { \"info\": \"fail\" },\\\n    \"returnCode\": 500,\\\n\
+            \    \"version\": \"5.0.1\" }\n4. redis에서 \"worker:assignedSpot:<workerId>\"\
+            \ 존재 여부 확인\n  - 이미 존재하는 경우 응답 메시지\\\n  X-Ingest-Status: <workerType> report\
+            \ ERROR\\\n  X-Ingest-Message: history not found\\\n  Content-Type: application/json;\
+            \ charset=utf-8\\\n  Status Code: 200\\\n  Body: \\\n  { \"message\":\
+            \ \"sucess\",\\\n    \"result\": { \"status\": \"OK\" },\\\n    \"returnCode\"\
+            : 200,\\\n    \"version\": \"5.0.1\" }\n5. redis에서 \"worker:assignedSpot:<workerId>\"\
+            \ 조회\n  - 할당된 workerId가 없는 경우 응답 메시지\\\n  X-Ingest-Status: <workerType>\
+            \ report ERROR\\\n  X-Ingest-Message: workerId not found\\\n  Content-Type:\
+            \ application/json; charset=utf-8\\\n  Status Code: 200\\\n  Body: \\\n\
+            \  { \"message\": \"success\",\\\n    \"result\": { \"status\": \"OK\"\
+            },\\\n    \"returnCode\": 200,\\\n    \"version\": \"5.0.1\" }\n6. query\
+            \ parameter 중 \"jobState\"를 \"S\" 요청한 경우\\\n  6.1. redis에서 'SISMEMBER\
+            \ \"worker:successJob:<jobId>\" \"<workerId>\"'로 worker의 job 완료 여부 조회\n\
+            \    - 완료된 경우 응답 메시지\\\n      X-Ingest-Status: <workerType> report ERROR\\\
+            \n      X-Ingest-Message: already reported workerId\\\n      Content-Type:\
+            \ application/json; charset=utf-8\\\n      Status Code: 200\\\n      Body:\
+            \ \\\n      { \"message\": \"success\",\\\n        \"result\": { \"status\"\
+            : \"OK\" },\\\n        \"returnCode\": 200,\\\n        \"version\": \"\
+            5.0.1\" }  \n    - 완료되지 않은 경우, redis에서 다음 오퍼레이션 수행\n    - SADD \"worker:successJobs:<jobId>\"\
+            \ \"<workerId>\"\n    - EXPIRE \"worker:successJobs:<jobId>\" 86400\n\
+            \  \n  6.2. 다음 redis 오퍼레이션 수행\\\n    - SCARD \"worker:successJobs:<jobId>\"\
+            \ #오퍼레이션을 수행하여 성공한 job 수 조회\\\n    - EXPIRE \"worker:successJobs:<jobId>\"\
+            \ 86400\\\n    - GET \"worker:divCount:<jobId>\"\n\n  6.3. 'SISMEMBER\
+            \ \"worker:progressiveJobs:<workerType>\" \"<jobId>\"'로 입수 진행 중인 job 조\
+            회\\\n    - 진행 중인 job이 없는 경우 응답 메시지\\\n      X-Ingest-Status: <workerType>\
+            \ report ERROR\\\n      X-Ingest-Message: already finished job\\\n   \
+            \   Content-Type: application/json; charset=utf-8\\\n      Status Code:\
+            \ 200\\\n      Body: \\\n      { \"message\": \"success\",\\\n       \
+            \ \"result\": { \"status\": \"OK\" },\\\n        \"returnCode\": 200,\\\
+            \n        \"version\": \"5.0.1\" }\n        \n  6.4. \"6.2\"항에서 구한 \"\
+            worker:successJobs:<jobId>\"의 수가 \"worker:divCount:<jobId>\" 보다 크거나 같은\
+            \ 경우\\\n    6.4.1. 다음 redis 오퍼레이션 수행\\\n      - SREM \"worker:progressiveJobs:<workerType>\"\
+            \ \"<jobId>\"\\\n      - SADD \"worker:finishedJobs:<workerType>\" \"\
+            <jobId>\"\\\n      - SETEX \"worker:jobStatus:<jobId>\" 86400 \"success\"\
+            \\\n      - DEL \"worker:divCount:<jobId>\"\\\n    6.4.2. jobtory에서 결과\
+            \ 조회\n      - jobtory HTTP GET message: \"http://127.0.0.1:3000/v5/job/report?jobId=<jobId>&jobType=<jobType>&jobState=S&errCode=<errCode>\"\
+            \\\n      - jobtory 조회 결과가 \"200 OK\" 인 경우 응답 메시지\\\n        X-Ingest-Status:\
+            \ <workerType> report OK\\\n        X-Ingest-Message: divCount <divCount>\
+            \ successJobCount <successJobCount> jobapi report success\\\n        Content-Type:\
+            \ application/json; charset=utf-8\\\n        Status Code: 200\\\n    \
+            \    Body: \\\n        { \"message\": \"success\",\\\n          \"result\"\
+            : { \"status\": \"OK\" },\\\n          \"returnCode\": 200,\\\n      \
+            \    \"version\": \"5.0.1\" }\n      - jobtory 조회 결과가 \"200 OK\" 이외의 값\
+            인 경우 응답 메시지\n7. redis에서 다음 operations 수행\n  - SADD \"worker:assignedJob:\"\
+            \ \"<workerId>\"\\\n  - EXPIRE \"worker:assignedJob:<workerId>\" 86400\\\
+            \n  - SETEX \"worker:assignedSpot:<workerId>\" 86400 \"<4번의 조회 결과>\"\\\
+            \n  - SETEX \"worker:divCount:<4번 조회 결과의 jobId>\" 86400 \"<4번 조회 결과의 divCount>\"\
+            \\\n  - SADD \"worker:workerIds:<workerType>\" \"<workerId>\"\n8. heartbeat\
+            \ 업데이트 후 응답\n  - SETEX \"worker:heartbeat:<workerId>\" 30 \"<workerIp>\"\
+            \\\n  - SETEX \"worker:jobStatus:<jobId>\" 86400 \"ongoing\"\\\n  X-Ingest-Status:\
+            \ <workerType> request OK\\\n  X-Ingest-Message: \"<4번 조회 결과>\"\\\n  Content-Type:\
+            \ application/json; charset=utf-8\\\n  Status Code: 200\\\n  Body: \\\n\
+            \  { \"message\": \"success\",\\\n    \"result\": { \"count\": 1, \"list\"\
+            : [ \"<4번 조회 결과>\", ... ] },\\\n    \"returnCode\": 200,\\\n    \"version\"\
+            : \"5.0.1\" }\n"
+          headers:
+            X-Ingest-Status:
+              description: 요청 메세지 처리 상태 응답 헤더
+              style: simple
+              explode: false
+              schema:
+                type: string
+              example: PP request ERROR
+            X-Ingest-Message:
+              description: 요청 처리 세부 결과 메시지 응답 헤더
+              style: simple
+              explode: false
+              schema:
+                type: string
+          content:
+            application/json: {}
+  /worker/heartbeat:
+    get:
+      tags:
+      - worker
+      summary: workManager hearbeat 조회 API
+      parameters:
+      - name: workerType
+        in: query
+        required: true
+        style: form
+        explode: true
+        schema:
+          $ref: '#/components/parameters/workerTypeParam'
+      - name: workerId
+        in: query
+        required: true
+        style: form
+        explode: true
+        schema:
+          type: string
+      - name: workerIp
+        in: query
+        required: false
+        style: form
+        explode: true
+        schema:
+          type: string
+      - name: workerCost
+        in: query
+        required: false
+        style: form
+        explode: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: hearbeeat 응답
+          headers:
+            X-Ingest-Status:
+              style: simple
+              explode: false
+              schema:
+                type: string
+                example: PP heartbeat OK
+            X-Ingest-Message:
+              style: simple
+              explode: false
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/inline_response_200_1'
+  /worker/status:
+    get:
+      tags:
+      - worker
+      parameters:
+      - name: jobId
+        in: query
+        required: false
+        style: form
+        explode: true
+        schema:
+          type: string
+      - name: jobType
+        in: query
+        required: false
+        style: form
+        explode: true
+        schema:
+          type: string
+      - name: workerType
+        in: query
+        required: false
+        style: form
+        explode: true
+        schema:
+          type: string
+      - name: costPerDay
+        in: query
+        required: false
+        style: form
+        explode: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: 상태 응답
+          headers:
+            X-Ingest-Status:
+              style: simple
+              explode: false
+              schema:
+                type: string
+                example: status OK
+            X-Ingest-Message:
+              style: simple
+              explode: false
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobIdStatusModel'
+  /worker/return:
+    get:
+      tags:
+      - worker
+      parameters:
+      - name: workerType
+        in: query
+        required: false
+        style: form
+        explode: true
+        schema:
+          $ref: '#/components/schemas/JobTypeModel'
+      - name: workerId
+        in: query
+        required: false
+        style: form
+        explode: true
+        schema:
+          type: string
+      - name: workerIp
+        in: query
+        required: false
+        style: form
+        explode: true
+        schema:
+          type: string
+        example: 10.10.2.11
+      - name: vmScaleSetName
+        in: query
+        required: false
+        style: form
+        explode: true
+        schema:
+          type: string
+      - name: instanceId
+        in: query
+        required: false
+        style: form
+        explode: true
+        schema:
+          type: string
+      - name: runtime
+        in: query
+        required: false
+        style: form
+        explode: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: VM 삭제
+          headers:
+            X-Delete-Debug:
+              style: simple
+              explode: false
+              schema:
+                type: string
+              example: VM Delete OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/inline_response_200_2'
+        "500":
+          description: VM 삭제 실패
+          headers:
+            X-Delete-Debug:
+              style: simple
+              explode: false
+              schema:
+                type: string
+              example: VM Delete fail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/inline_response_500'
+  /check.redis:
+    get:
+      tags:
+      - worker
+      description: redis check API
+      responses:
+        "200":
+          description: 마스터 응답
+          headers:
+            X-Ingest-Status:
+              description: 상태 응답
+              style: simple
+              explode: false
+              schema:
+                type: string
+                example: check MASTER
+            X-Ingest-Message:
+              style: simple
+              explode: false
+              schema:
+                type: string
+        "406":
+          description: 슬레이브 응답
+          headers:
+            X-Ingest-Status:
+              style: simple
+              explode: false
+              schema:
+                type: string
+              example: check SLAVE
+            X-Ingest-Message:
+              style: simple
+              explode: false
+              schema:
+                type: string
+        "500":
+          description: redis connection failed status code
+  /worker/monitor/jobs_list.js:
+    get:
+      tags:
+      - worker
+      parameters:
+      - name: workerType
+        in: query
+        required: false
+        style: form
+        explode: true
+        schema:
+          $ref: '#/components/schemas/JobTypeModel'
+      responses:
+        "200":
+          description: Job 목록 페이지 응답
+  /worker/monitor/jobs_minute.js:
+    get:
+      tags:
+      - worker
+      parameters:
+      - name: workerType
+        in: query
+        required: false
+        style: form
+        explode: true
+        schema:
+          $ref: '#/components/schemas/JobTypeModel'
+      responses:
+        "200":
+          description: 분당 Job 처리 현황 차트 응답
+  /worker/monitor/worker_minute.js:
+    get:
+      tags:
+      - worker
+      parameters:
+      - name: workerType
+        in: query
+        required: false
+        style: form
+        explode: true
+        schema:
+          $ref: '#/components/schemas/JobTypeModel'
+      responses:
+        "200":
+          description: 분당 Worker 현황 차트 응답
+  /worker/monitor/cost_day.js:
+    get:
+      tags:
+      - worker
+      parameters:
+      - name: workerType
+        in: query
+        required: false
+        style: form
+        explode: true
+        schema:
+          $ref: '#/components/schemas/JobTypeModel'
+      responses:
+        "200":
+          description: 일간 예상 비용 차트 응답
+  /dashboard:
+    get:
+      tags:
+      - JAPI
+      description: TODO
+      responses:
+        "200":
+          description: TODO
+  /dashboard/list:
+    get:
+      tags:
+      - JAPI
+      description: TODO
+      responses:
+        "200":
+          description: TODO
+  /dashboard/channel:
+    get:
+      tags:
+      - JAPI
+      description: TODO
+      responses:
+        "200":
+          description: TODO
+    put:
+      tags:
+      - JAPI
+      description: TODO
+      responses:
+        "201":
+          description: TODO
+  /mu/confBitrate:
+    get:
+      tags:
+      - JAPI
+      description: TODO
+      responses:
+        "200":
+          description: TODO
+  /mu/mediainfo:
+    get:
+      tags:
+      - JAPI
+      description: TODO
+      responses:
+        "200":
+          description: TODO
+  /mu/filepath:
+    get:
+      tags:
+      - JAPI
+      description: TODO
+      responses:
+        "200":
+          description: TODO
+  /mu/exposure:
+    get:
+      tags:
+      - JAPI
+      description: TODO
+      responses:
+        "200":
+          description: TODO
+    post:
+      tags:
+      - JAPI
+      description: TODO
+      responses:
+        "200":
+          description: TODO
+  /mu/play:
+    get:
+      tags:
+      - JAPI
+      description: TODO
+      responses:
+        "200":
+          description: TODO
+  /mu/playback:
+    get:
+      tags:
+      - JAPI
+      description: TODO
+      responses:
+        "200":
+          description: TODO
+  /mu/curl:
+    get:
+      tags:
+      - JAPI
+      description: TODO
+      responses:
+        "200":
+          description: TODO
+  /backoffice:
+    get:
+      tags:
+      - JAPI
+      description: TODO
+      responses:
+        "200":
+          description: TODO
+  /backoffice/list:
+    get:
+      tags:
+      - JAPI
+      description: TODO
+      responses:
+        "200":
+          description: TODO
+  /backoffice/reingest:
+    post:
+      tags:
+      - JAPI
+      description: TODO
+      responses:
+        "200":
+          description: TODO
+components:
+  schemas:
+    JobTypeModel:
+      type: string
+      description: JobType 모델
+      enum:
+      - PP
+      - PT-A
+      - PT-H
+      - PM
+      - PV
+      - PMV
+      - PRE
+      - MI
+    JobStateModel:
+      type: string
+      description: JobState 모델
+      enum:
+      - "N"
+      - S
+      - F
+      - P
+      - T
+    ToBeAssignedSubJobModel:
+      type: object
+      properties:
+        jobId:
+          type: integer
+          format: int64
+        jobType:
+          $ref: '#/components/schemas/JobTypeModel'
+        channelId:
+          type: integer
+        contentId:
+          type: integer
+        bitrate:
+          type: integer
+          format: int32
+        mediaVersion:
+          type: integer
+          format: int32
+        playtime:
+          type: integer
+          format: int32
+        fileSize:
+          type: integer
+          format: int32
+        range:
+          type: string
+        downloadURL:
+          type: string
+        bucketName:
+          type: string
+        transcodingType:
+          type: string
+        isWatermark:
+          type: string
+        isDrm:
+          type: string
+        isSurround:
+          type: string
+        audioLang:
+          type: string
+        subtitleLang:
+          type: string
+        isAge:
+          type: string
+        ageType:
+          type: string
+        ageTemplate:
+          type: string
+        ageLevel:
+          type: string
+        ageTitle:
+          type: string
+        ageDate:
+          type: string
+        previewDuration:
+          type: integer
+        headerModDate:
+          type: integer
+        learningType:
+          type: string
+        learningTypeArr:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToBeAssignedSubJobModel_learningTypeArr'
+        section:
+          type: string
+        category:
+          type: string
+        isVr:
+          type: string
+        vrType:
+          type: string
+      description: subjob 응답 모델
+    JobIdStatusModel:
+      type: object
+      properties:
+        message:
+          type: string
+          example: success
+        result:
+          $ref: '#/components/schemas/JobIdStatusModel_result'
+      description: jobId status response body
+    JobTypeStatusModel:
+      type: object
+      properties:
+        message:
+          type: string
+          example: success
+        result:
+          $ref: '#/components/schemas/JobTypeStatusModel_result'
+        returnCode:
+          type: integer
+          example: 200
+        version:
+          type: string
+          example: 5.0.1
+    WorkerTypeStatusModel:
+      type: object
+      properties:
+        message:
+          type: string
+          example: success
+        result:
+          $ref: '#/components/schemas/WorkerTypeStatusModel_result'
+        returnCode:
+          type: integer
+          example: 200
+        version:
+          type: string
+          example: 5.0.1
+    inline_response_200:
+      type: object
+      properties:
+        count:
+          type: integer
+        list:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToBeAssignedSubJobModel'
+    inline_response_200_1:
+      type: object
+      properties:
+        message:
+          type: string
+          example: success
+        result:
+          $ref: '#/components/schemas/inline_response_200_1_result'
+        returnCode:
+          type: integer
+          example: 200
+        version:
+          type: string
+          example: 5.0.1
+    inline_response_200_2:
+      properties:
+        message:
+          type: string
+          example: success
+        result:
+          $ref: '#/components/schemas/inline_response_200_1_result'
+        returnCode:
+          type: integer
+          example: 200
+        version:
+          type: string
+          example: 5.0.1
+    inline_response_500:
+      properties:
+        message:
+          type: string
+          example: fail
+        result:
+          $ref: '#/components/schemas/inline_response_500_result'
+        returnCode:
+          type: integer
+          example: 500
+        version:
+          type: string
+          example: 5.0.1
+    ToBeAssignedSubJobModel_learningTypeArr:
+      type: object
+      properties:
+        learningType:
+          type: string
+    JobIdStatusModel_result_list:
+      type: object
+      properties:
+        workerId:
+          type: integer
+        workerStatus:
+          type: string
+          example: ongoing
+        workerIp:
+          type: string
+          example: 10.10.2.22
+        jobInfo:
+          type: object
+          properties: {}
+        returnCode:
+          type: integer
+          example: 200
+        version:
+          type: string
+          example: 5.0.1
+    JobIdStatusModel_result:
+      type: object
+      properties:
+        count:
+          type: integer
+          example: 20
+        jobStatus:
+          type: string
+          example: P
+        assignedJobCount:
+          type: integer
+          example: 10
+        successCount:
+          type: integer
+          example: 7
+        failureCount:
+          type: integer
+          example: 3
+        terminatedCount:
+          type: integer
+          example: 0
+        list:
+          $ref: '#/components/schemas/JobIdStatusModel_result_list'
+    JobTypeStatusModel_result:
+      type: object
+      properties:
+        count:
+          type: integer
+          example: 5
+        list:
+          type: object
+          properties: {}
+    WorkerTypeStatusModel_result:
+      type: object
+      properties:
+        runtime:
+          type: integer
+          example: 5
+        cost:
+          type: integer
+    inline_response_200_1_result:
+      type: object
+      properties:
+        status:
+          type: string
+          example: OK
+    inline_response_500_result:
+      type: object
+      properties:
+        status:
+          type: string
+          example: fail
+  responses:
+    WorkerCommonResponseModel:
+      description: Worker의 공통 응답 모델
+      headers:
+        X-Ingest-Status:
+          description: 요청 메세지 처리 상태 응답 헤더
+          style: simple
+          explode: false
+          schema:
+            type: string
+          example: PP request ERROR
+        X-Ingest-Message:
+          description: 요청 처리 세부 결과 메시지 응답 헤더
+          style: simple
+          explode: false
+          schema:
+            type: string
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: success
+              returnCode:
+                type: integer
+                example: 200
+              version:
+                type: string
+                example: 5.0.1
+              result:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                    example: 0
+                  list:
+                    type: array
+                    items:
+                      type: object
+                      properties: {}
+  parameters:
+    jobTypeParam:
+      name: jobType
+      in: query
+      required: true
+      style: form
+      explode: true
+      schema:
+        $ref: '#/components/schemas/JobTypeModel'
+    jobStateParam:
+      name: jobState
+      in: query
+      required: true
+      style: form
+      explode: true
+      schema:
+        $ref: '#/components/schemas/JobStateModel'
+    jobCntParam:
+      name: jobCnt
+      in: query
+      required: false
+      style: form
+      explode: true
+      schema:
+        type: integer
+    workerTypeParam:
+      name: workerType
+      in: query
+      required: false
+      style: form
+      explode: true
+      schema:
+        $ref: '#/components/schemas/JobTypeModel'
